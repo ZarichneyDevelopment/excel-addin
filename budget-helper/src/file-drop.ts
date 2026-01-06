@@ -1,6 +1,7 @@
-
 import { WriteToTable } from "./excel-helpers";
 import { ProcessTransactions } from "./transaction";
+import { handleError } from "./error-handler";
+import { logToConsole } from "./logger";
 
 export function preventDefaults(e) {
     e.preventDefault();
@@ -18,6 +19,7 @@ export function handleFileDrop(event) {
     var files = event.dataTransfer.files;
     if (files.length > 0) {
         var file = files[0];
+        logToConsole(`Reading file: ${file.name}...`, 'info');
         var reader = new FileReader();
 
         reader.onload = ProcessFileDrop;
@@ -27,10 +29,17 @@ export function handleFileDrop(event) {
 }
 
 export async function ProcessFileDrop(event) {
-    console.log('File upload event:', event);
-    var contents = event.target.result;
+    try {
+        var contents = event.target.result;
+        logToConsole('Processing transactions...', 'info');
 
-    const transactions = await ProcessTransactions(contents);
+        const transactions = await ProcessTransactions(contents);
 
-    await WriteToTable("Transactions", transactions);
+        await WriteToTable("Transactions", transactions);
+        
+        logToConsole(`Successfully imported ${transactions.length} transactions.`, 'success');
+    } catch (error) {
+        handleError(error, 'ProcessFileDrop');
+        logToConsole('Failed to process file.', 'error');
+    }
 }

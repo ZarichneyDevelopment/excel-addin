@@ -121,3 +121,88 @@ export async function UpdateTableRow(tableName: string, rowIndex: number, data: 
     });
 }
 
+export async function UpdateTableRows(tableName: string, updates: { rowIndex: number, data: any }[]) {
+    if (updates.length === 0) return;
+
+    await Excel.run(async (context) => {
+        const table = context.workbook.tables.getItem(tableName);
+        const headers = table.getHeaderRowRange().load('values');
+        await context.sync();
+
+        const headerValues = headers.values[0];
+
+        updates.forEach(update => {
+            const rowRange = table.getDataBodyRange().getRow(update.rowIndex);
+            const updatedValues = headerValues.map(header => update.data[header] ?? null);
+            rowRange.values = [updatedValues];
+        });
+
+        await context.sync();
+    }).catch(error => {
+        console.error("Error updating rows in table:", error);
+        throw error;
+    });
+}
+
+export async function EnsureTableExists(tableName: string, columns: string[], sheetName: string = tableName) {
+    await Excel.run(async (context) => {
+        const table = context.workbook.tables.getItemOrNullObject(tableName);
+        await context.sync();
+
+        if (!table.isNullObject) {
+            return; // Table exists
+        }
+
+        console.log(`Table '${tableName}' not found. Creating it...`);
+
+        // Check if sheet exists
+        let sheet = context.workbook.worksheets.getItemOrNullObject(sheetName);
+        await context.sync();
+
+        if (sheet.isNullObject) {
+            console.log(`Sheet '${sheetName}' not found. Creating it...`);
+            sheet = context.workbook.worksheets.add(sheetName);
+        }
+
+        // Create Table
+        // Determine range based on columns count. e.g., A1:C1 for 3 columns.
+        const endChar = String.fromCharCode('A'.charCodeAt(0) + columns.length - 1);
+        const rangeAddress = `A1:${endChar}1`;
+        
+        const newTable = sheet.tables.add(rangeAddress, true);
+        newTable.name = tableName;
+        newTable.getHeaderRowRange().values = [columns];
+
+        await context.sync();
+        console.log(`Table '${tableName}' created successfully.`);
+    }).catch(error => {
+        console.error(`Error ensuring table '${tableName}' exists:`, error);
+        throw error;
+    });
+}
+
+export async function SetNamedRangeValue(rangeName: string, value: any) {
+    await Excel.run(async (context) => {
+        let namedItem = context.workbook.names.getItemOrNullObject(rangeName);
+        await context.sync();
+
+        if (namedItem.isNullObject) {
+            // Lazy creation logic for known ranges
+            if (rangeName === 'LastRolloverUpdate') {
+                // Default to Rollovers!H1 if missing
+                console.warn(`Named range '${rangeName}' not found. Creating it at Rollovers!H1.`);
+                namedItem = context.workbook.names.add(rangeName, 'Rollovers!H1');
+            } else {
+                throw new Error(`Named range '${rangeName}' not found and no default creation logic exists.`);
+            }
+        }
+
+        const range = namedItem.getRange();
+        range.values = [[value]]; // Range values must be 2D array
+        await context.sync();
+    }).catch(error => {
+        console.error(`Error setting named range '${rangeName}':`, error);
+        throw error;
+    });
+}
+

@@ -1,6 +1,6 @@
 
 import Papa from 'papaparse';
-import { getAccounts, getExpenseList, getMatchingRules, getAllTransactionIds, MatchSet } from './lookups';
+import { getAccounts, getExpenseList, getMatchingRules, getAllTransactionIds, MatchSet, getAmbiguousItems } from './lookups';
 import { AddToTable } from './excel-helpers';
 
 export class Transaction {
@@ -84,6 +84,9 @@ export async function ProcessTransactions(fileContent) {
     const expenseMatches = await getMatchingRules();
     console.log('Matching Rules:', expenseMatches);
 
+    const ambiguousItems = await getAmbiguousItems();
+    console.log('Ambiguous Items:', ambiguousItems);
+
     const accountNames = await getAccounts();
     console.log('accountNames:', accountNames);
 
@@ -105,7 +108,7 @@ export async function ProcessTransactions(fileContent) {
 
         if (!lookupRule['Match 2']) {
             // This look up rule isnt a candidate for an exact match, so it's assumed the first part is a wildcard matches
-            wildcardLookup.push(lookupRule['Match 1']);
+            wildcardLookup.push({ match: lookupRule['Match 1'], expense: lookupRule['Expense Type'] });
         }
     });
 
@@ -126,6 +129,17 @@ export async function ProcessTransactions(fileContent) {
         // Provide friendly account name with last four digits of account number
         transaction.Account = `${transaction['Account Name']} (${transaction['Account Number'].slice(-4)})`;
 
+        // Check for Ambiguity
+        const isAmbiguous = ambiguousItems.some(item => 
+            transaction['Description 1'].toLowerCase().includes(item.Item.toLowerCase())
+        );
+
+        if (isAmbiguous) {
+            console.warn('Transaction flagged as ambiguous:', transaction['Description 1']);
+            transaction['Expense'] = 'Ambiguous';
+            return;
+        }
+
         // Auto expense type categorization:
 
         // Attempt to find an exact rule match to identify type of expense
@@ -135,26 +149,18 @@ export async function ProcessTransactions(fileContent) {
             return;
         }
 
-        // Iterate over rules to find match by prefix
-        for (let item of wildcardLookup) {
-            if (transaction['Description 1'].toLowerCase().startsWith(item.toLowerCase())) {
-                let exactMatch = indexedLookup.get(item);
-                transaction['Expense'] = exactMatch;
+        // Iterate over rules to find match by substring (Aggressive)
+        for (let rule of wildcardLookup) {
+            if (transaction['Description 1'].toLowerCase().includes(rule.match.toLowerCase())) {
+                transaction['Expense'] = rule.expense;
                 return;
             }
         }
 
         console.warn('No match found for transaction:', transaction['Description 1'], transaction['Description 2']);
-
-        const newRule: MatchSet = {
-            'Match 1': transaction['Description 1'],
-            'Match 2': transaction['Description 2'],
-            'Amount': '',
-            'Expense Type': 'Expense Type'
-        };
-
-        // Add this new unknown transaction into the lookup table for future matches
-        AddToTable("MatchingRules", newRule);
+        
+        // Removed auto-add to MatchingRules to prevent pollution. 
+        // User should manually review and add rules or we can implement a "Learning" feature later.
     });
 
     console.log('New Transactions:', newTransactions);

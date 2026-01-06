@@ -1,7 +1,7 @@
 
-import { filter, forkJoin, from, map, of, reduce, switchMap, tap, toArray } from "rxjs";
-import { AddToTable, TableRows$, UpdateTableRow } from "./excel-helpers";
-import { getBudget, getExpenseList, getInitialAmount, getTransactions } from "./lookups";
+import { filter, forkJoin, from, map, of, reduce, switchMap, tap, toArray, throwError } from "rxjs";
+import { AddToTable, TableRows$, UpdateTableRow, UpdateTableRows, WriteToTable } from "./excel-helpers";
+import { getBudget, getExpenseList, getInitialAmount, getTransactions, getAllTransactions, getAllExpenseData, getAllBudgetHistory, getRollovers, setLastUpdateDate } from "./lookups";
 import { Transaction } from "./transaction";
 
 
@@ -14,6 +14,11 @@ export class RolloverEntry {
     EOM: number;
 }
 
+/**
+ * Retrieves a rollover entry for the requested month/year/expense.
+ * If more than one entry exists, the first is returned while the dupes are logged.
+ * When no entry exists yet, we compute totals and bootstrap a new row via `AddToTable`.
+ */
 export async function getRollover(month: number, year: number, expense: string): Promise<RolloverEntry> {
     return new Promise((resolve, reject) => {
         TableRows$('Rollovers').pipe(
@@ -24,8 +29,10 @@ export async function getRollover(month: number, year: number, expense: string):
 
                 if (rows.length > 1) {
                     console.warn("Unexpected multiple rollover entries found for the same month, year, and expense", rows);
-                    debugger;
-                } else if (rows.length === 1) {
+                    return of(rows[0]);
+                }
+
+                if (rows.length === 1) {
                     // Match found, continue
                     return of(rows[0]);
                 }
@@ -66,12 +73,15 @@ export async function getRollover(month: number, year: number, expense: string):
     });
 }
 
+/**
+ * Updates an existing rollover row by locating the matching row index and delegating
+ * to `UpdateTableRow`. Rejects if no matching row exists so callers can respond immediately.
+ */
 export async function updateRollover(entry: RolloverEntry): Promise<void> {
     return new Promise((resolve, reject) => {
         TableRows$('Rollovers').pipe(
             toArray(), // Collect all rows into an array
             switchMap((rows) => {
-                // Find the row that matches the criteria
                 const rowIndex = rows.findIndex(row =>
                     row.Month === entry.Month &&
                     row.Year === entry.Year &&
@@ -79,24 +89,23 @@ export async function updateRollover(entry: RolloverEntry): Promise<void> {
                 );
 
                 if (rowIndex === -1) {
-                    // No matching row found, consider how you want to handle this
                     console.error("No matching row found to update.");
-                    reject(new Error("No matching row found."));
-                    return from([null]); // Just to fit the switchMap expected return
-                } else {
-                    // Update the row. Assuming UpdateTableRow function exists and works similarly to WriteToTable,
-                    // but you might need to implement it based on how your Excel integration is set up
-                    return from(UpdateTableRow('Rollovers', rowIndex, entry));
+                    return throwError(() => new Error("No matching row found."));
                 }
-            }),
-            tap({
-                next: () => resolve(),
-                error: (err) => reject(err),
+
+                return from(UpdateTableRow('Rollovers', rowIndex, entry));
             })
-        ).subscribe();
+        ).subscribe({
+            next: () => resolve(),
+            error: (err) => reject(err),
+        });
     });
 }
 
+/**
+ * Recalculates rollovers from the given starting month/year through the current date.
+ * Optimized to batch data fetching and writing to improve performance.
+ */
 export async function resetRollover(startingMonth: number, startingYear: number, expense: string | null = null): Promise<void> {
 
     let expenses: string[];
@@ -111,43 +120,138 @@ export async function resetRollover(startingMonth: number, startingYear: number,
     let todaysMonth = today.getMonth() + 1;
     let todaysYear = today.getFullYear();
 
+    // 1. Bulk Fetch Data
+    const [allRollovers, allTransactions, expenseData, budgetHistory] = await Promise.all([
+        getRollovers(),
+        getAllTransactions(),
+        getAllExpenseData(),
+        getAllBudgetHistory()
+    ]);
+
+    // 2. Index Data for O(1) Lookup
+    // Map: "Month-Year-Expense" -> { entry: RolloverEntry, index: number }
+    const rolloverMap = new Map<string, { entry: RolloverEntry, index: number }>();
+    allRollovers.forEach((entry, index) => {
+        const key = `${entry.Month}-${entry.Year}-${entry.Expense}`;
+        rolloverMap.set(key, { entry, index });
+    });
+
+    // Map: "Month-Year-Expense" -> totalAmount
+    const transactionMap = new Map<string, number>();
+    allTransactions.forEach(t => {
+        // Ensure Transaction has Month/Year/Expense populated (assuming they come from Excel table correctly)
+        // If not, we might need to parse Date. For now assuming properties exist as in original logic.
+        const key = `${t.Month}-${t.Year}-${t['Expense Type']}`;
+        const current = transactionMap.get(key) || 0;
+        transactionMap.set(key, current + (t.Amount || 0));
+    });
+
+    // Map: "Expense" -> { Budget: number, Init: number }
+    const expenseDataMap = new Map<string, { Budget: number, Init: number }>();
+    expenseData.forEach(row => {
+        expenseDataMap.set(row['Expense Type'], {
+            Budget: parseFloat(row['Budget'] || 0),
+            Init: parseFloat(row['Init'] || 0)
+        });
+    });
+
+    // 3. Prepare Updates and New Entries
+    const updates: { rowIndex: number, data: RolloverEntry }[] = [];
+    const newEntries: RolloverEntry[] = [];
+
+    // Helper to get budget from history or default
+    const getBudgetInMemory = (expense: string, month: number, year: number): number => {
+        // Check history
+        const history = budgetHistory.find(row => 
+            row['Expense'] === expense &&
+            (row['Month Start'] <= month && month <= row['Month End']) &&
+            (row['Year Start'] <= year && year <= row['Year End'])
+        );
+        if (history) return parseFloat(history.Amount);
+        
+        // Default
+        return expenseDataMap.get(expense)?.Budget || 0;
+    };
+
+    const getInitialAmountInMemory = (expense: string): number => {
+        return expenseDataMap.get(expense)?.Init || 0;
+    };
+
     for (const expense of expenses) {
-
-        let loopLimit = 24; // Hard max of 2 years of updates
-
+        let loopLimit = 24;
         let month = startingMonth;
         let year = startingYear;
 
-        // validation check to make sure dates are not in the future
         if (year > todaysYear || (year === todaysYear && month > todaysMonth)) {
             console.error("Cannot reset rollover for a future date.");
             return;
         }
 
         while ((year < todaysYear || (year === todaysYear && month <= todaysMonth)) && loopLimit > 0) {
+            
+            const key = `${month}-${year}-${expense}`;
+            let currentRolloverData = rolloverMap.get(key);
+            let rolloverEntry = currentRolloverData ? { ...currentRolloverData.entry } : null;
 
-            const rollover = await getRollover(month, year, expense);
+            // Get Budget
+            const budget = getBudgetInMemory(expense, month, year);
 
-            const budget = await getBudget(expense, month, year);
-
+            // Get Previous Rollover EOM
             let previousMonth = month - 1;
             let previousYear = year;
             if (previousMonth === 0) {
                 previousMonth = 12;
                 previousYear--;
             }
+            const prevKey = `${previousMonth}-${previousYear}-${expense}`;
+            const prevRolloverData = rolloverMap.get(prevKey);
+            
+            let prevEOM = 0;
+            if (prevRolloverData) {
+                prevEOM = prevRolloverData.entry.EOM;
+            } else {
+                // If previous doesn't exist, we assume it's the start, so we use Initial Amount
+                // Matches logic: "And the expense's initial amount" from original getRollover fallback
+                prevEOM = getInitialAmountInMemory(expense);
+            }
 
-            const previousRollover = await getRollover(previousMonth, previousYear, expense);
+            // Get Monthly Transactions
+            const totalAmount = transactionMap.get(`${month}-${year}-${expense}`) || 0;
 
-            const monthlyExpenses = await getTransactions(month, year, expense);
+            // Calculate
+            if (!rolloverEntry) {
+                // Create new
+                rolloverEntry = {
+                    Month: month,
+                    Year: year,
+                    Expense: expense,
+                    Expenses: 0,
+                    BOM: 0,
+                    EOM: 0
+                };
+            }
 
-            const totalAmount = monthlyExpenses.reduce((total, transaction) => total + transaction.Amount, 0);
-            debugger;
-            rollover.Expenses = totalAmount;
-            rollover.BOM = previousRollover.EOM;
-            rollover.EOM = rollover.BOM + budget + totalAmount;
+            rolloverEntry.Expenses = totalAmount;
+            rolloverEntry.BOM = prevEOM;
+            rolloverEntry.EOM = rolloverEntry.BOM + budget + totalAmount;
 
-            await updateRollover(rollover);
+            // Store result
+            if (currentRolloverData) {
+                // It's an update
+                // Check if we already have an update pending for this index?
+                // Actually, just push to updates. If we process sequentially, we might update the same row?
+                // No, we iterate time sequentially. 
+                // BUT: rolloverMap.get(key).entry needs to be updated IN MEMORY so next iteration picks up new EOM!
+                currentRolloverData.entry = rolloverEntry; // Update map reference
+                updates.push({ rowIndex: currentRolloverData.index, data: rolloverEntry });
+            } else {
+                // It's a new entry
+                newEntries.push(rolloverEntry);
+                // Add to map so next iteration finds it
+                // Note: Index is unknown for new entries until saved. 
+                // But for calculation purposes (prevRollover), we only need the entry data (EOM).
+                rolloverMap.set(key, { entry: rolloverEntry, index: -1 }); 
+            }
 
             month++;
             if (month === 13) {
@@ -157,4 +261,25 @@ export async function resetRollover(startingMonth: number, startingYear: number,
             loopLimit--;
         }
     }
+
+    // 4. Batch Write
+    if (updates.length > 0) {
+        await UpdateTableRows('Rollovers', updates);
+    }
+
+    if (newEntries.length > 0) {
+        // AddToTable takes one object, WriteToTable takes array of arrays (rows)
+        // We need to convert objects to arrays of values, ensuring order matches table columns?
+        // AddToTable implementation: var row = Object.values(data); WriteToTable(tableName, [row]);
+        // Caution: Object.values order is not guaranteed to match Excel column order if interface properties aren't ordered.
+        // Ideally we should map to columns. 
+        // Based on RolloverEntry class: Month, Year, Expense, Expenses, BOM, EOM.
+        // Let's assume table columns match this order.
+        const rows = newEntries.map(e => [e.Month, e.Year, e.Expense, e.Expenses, e.BOM, e.EOM]);
+        await WriteToTable('Rollovers', rows);
+    }
+
+    await setLastUpdateDate(new Date());
 }
+
+

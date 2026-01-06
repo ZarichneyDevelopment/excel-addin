@@ -23,7 +23,9 @@
     "start:web": "office-addin-debugging start manifest.xml web",
     "stop": "office-addin-debugging stop manifest.xml",
     "validate": "office-addin-manifest validate manifest.xml",
-    "watch": "webpack --mode development --watch"
+    "watch": "webpack --mode development --watch",
+    "test": "jest",
+    "test:watch": "jest --watch"
   },
   "dependencies": {
     "core-js": "^3.9.1",
@@ -36,6 +38,7 @@
   "devDependencies": {
     "@babel/core": "^7.13.10",
     "@babel/preset-typescript": "^7.13.0",
+    "@types/jest": "^30.0.0",
     "@types/office-js": "^1.0.256",
     "@types/office-runtime": "^1.0.23",
     "acorn": "^8.5.0",
@@ -45,20 +48,23 @@
     "file-loader": "^6.2.0",
     "html-loader": "^4.1.0",
     "html-webpack-plugin": "^5.5.0",
-    "office-addin-cli": "^1.5.5",
-    "office-addin-debugging": "^5.0.9",
-    "office-addin-dev-certs": "^1.11.4",
-    "office-addin-lint": "^2.2.5",
-    "office-addin-manifest": "^1.12.4",
-    "office-addin-prettier-config": "^1.2.0",
+    "jest": "^30.2.0",
+    "jest-environment-jsdom": "^30.2.0",
+    "office-addin-cli": "^2.0.6",
+    "office-addin-debugging": "^6.0.4",
+    "office-addin-dev-certs": "^2.0.6",
+    "office-addin-lint": "^3.0.6",
+    "office-addin-manifest": "^2.1.2",
+    "office-addin-prettier-config": "^2.0.1",
     "os-browserify": "^0.3.0",
     "process": "^0.11.10",
     "source-map-loader": "^3.0.0",
+    "ts-jest": "^29.4.6",
     "ts-loader": "^9.4.1",
     "typescript": "^4.3.5",
     "webpack": "^5.76.3",
-    "webpack-cli": "^5.0.1",
-    "webpack-dev-server": "4.13.1"
+    "webpack-cli": "^6.0.1",
+    "webpack-dev-server": "^5.2.2"
   },
   "prettier": "office-addin-prettier-config",
   "browserslist": [
