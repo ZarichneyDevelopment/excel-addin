@@ -8,7 +8,7 @@
   <Description DefaultValue="A template to get started."/>
   <IconUrl DefaultValue="https://zarichneydevelopment.github.io/excel-addin/assets/icon-32.png"/>
   <HighResolutionIconUrl DefaultValue="https://zarichneydevelopment.github.io/excel-addin/assets/icon-64.png"/>
-  <SupportUrl DefaultValue="https://www.zarichney.com/help"/>
+  <SupportUrl DefaultValue="https://www.contoso.com/help"/>
   <AppDomains>
     <AppDomain>https://zarichneydevelopment.github.io</AppDomain>
   </AppDomains>
