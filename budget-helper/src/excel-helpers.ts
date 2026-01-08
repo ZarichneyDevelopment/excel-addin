@@ -192,29 +192,35 @@ export async function EnsureTableExists(tableName: string, columns: string[], sh
 export async function SetNamedRangeValue(rangeName: string, value: any) {
     console.log(`SetNamedRangeValue called for '${rangeName}' with value '${value}'.`);
     await Excel.run(async (context) => {
-        console.log(`SetNamedRangeValue: Getting named item '${rangeName}'...`);
-        let namedItem = context.workbook.names.getItemOrNullObject(rangeName);
-        await context.sync();
+        try {
+            console.log(`SetNamedRangeValue: Getting named item '${rangeName}'...`);
+            let namedItem = context.workbook.names.getItemOrNullObject(rangeName);
+            await context.sync();
 
-        if (namedItem.isNullObject) {
-            // Lazy creation logic for known ranges
-            if (rangeName === 'LastRolloverUpdate') {
-                // Default to Rollovers!H1 if missing
-                console.warn(`Named range '${rangeName}' not found. Creating it at Rollovers!H1.`);
-                namedItem = context.workbook.names.add(rangeName, 'Rollovers!H1');
-            } else {
-                throw new Error(`Named range '${rangeName}' not found and no default creation logic exists.`);
+            if (namedItem.isNullObject) {
+                // Lazy creation logic for known ranges
+                if (rangeName === 'LastRolloverUpdate') {
+                    // Default to Rollovers!H1 if missing
+                    console.warn(`Named range '${rangeName}' not found. Attempting to create it at Rollovers!H1.`);
+                    namedItem = context.workbook.names.add(rangeName, 'Rollovers!H1');
+                } else {
+                    console.warn(`Named range '${rangeName}' not found and no default creation logic exists. Skipping.`);
+                    return;
+                }
             }
-        }
 
-        console.log(`SetNamedRangeValue: Setting value for '${rangeName}'...`);
-        const range = namedItem.getRange();
-        range.values = [[value]]; // Range values must be 2D array
-        await context.sync();
-        console.log(`SetNamedRangeValue: Successfully set value for '${rangeName}'.`);
+            console.log(`SetNamedRangeValue: Setting value for '${rangeName}'...`);
+            const range = namedItem.getRange();
+            range.values = [[value]]; // Range values must be 2D array
+            await context.sync();
+            console.log(`SetNamedRangeValue: Successfully set value for '${rangeName}'.`);
+        } catch (innerError) {
+            console.warn(`Warning: Could not set named range '${rangeName}'. This is non-critical. Error:`, innerError);
+            // Do NOT re-throw. Allow the main process to continue.
+        }
     }).catch(error => {
-        console.error(`Error setting named range '${rangeName}':`, error);
-        throw error;
+        // This catch block handles errors in Excel.run setup itself, which we still log but don't rethrow to avoid crashing caller
+        console.warn(`Excel.run failed in SetNamedRangeValue for '${rangeName}':`, error);
     });
 }
 

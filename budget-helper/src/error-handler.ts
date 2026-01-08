@@ -53,9 +53,12 @@ function fallbackCopyText(text: string) {
     const textArea = document.createElement("textarea");
     textArea.value = text;
     
-    // Ensure it's not visible but part of the DOM
+    // Ensure it's part of the DOM but invisible to user, yet "visible" to browser focus
     textArea.style.position = "fixed";
-    textArea.style.left = "-9999px";
+    textArea.style.top = "0";
+    textArea.style.left = "0";
+    textArea.style.opacity = "0";
+    textArea.style.zIndex = "-1";
     document.body.appendChild(textArea);
     
     textArea.focus();
@@ -63,10 +66,14 @@ function fallbackCopyText(text: string) {
     
     try {
         const successful = document.execCommand('copy');
-        if (successful) showCopySuccess();
-        else console.error('Fallback copy failed.');
+        if (successful) {
+            console.log('Fallback copy successful');
+            showCopySuccess();
+        } else {
+            console.error('Fallback copy failed (execCommand returned false).');
+        }
     } catch (err) {
-        console.error('Fallback copy failed', err);
+        console.error('Fallback copy failed with error:', err);
     }
     
     document.body.removeChild(textArea);
