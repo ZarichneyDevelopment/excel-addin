@@ -50,20 +50,30 @@ export async function setLastUpdateDate(date: Date): Promise<void> {
     const dateString = date.toISOString().split('T')[0]; // YYYY-MM-DD
     
     try {
+        console.log(`Attempting to set Named Range 'LastRolloverUpdate' to ${dateString}...`);
         await SetNamedRangeValue('LastRolloverUpdate', dateString);
+        console.log("Successfully set Named Range.");
     } catch (error) {
         console.warn('Failed to set Named Range for Last Update, falling back to Document Settings.', error);
-        Office.context.document.settings.set('LastRolloverUpdate', dateString);
-        await new Promise<void>((resolve) => {
-            Office.context.document.settings.saveAsync((result) => {
-                if (result.status === Office.AsyncResultStatus.Failed) {
-                    console.error('Failed to save to Document Settings:', result.error);
-                } else {
-                    console.log('Saved Last Update to Document Settings.');
-                }
-                resolve();
+        try {
+            console.log("Setting Document Settings 'LastRolloverUpdate'...");
+            Office.context.document.settings.set('LastRolloverUpdate', dateString);
+            
+            console.log("Calling saveAsync on Document Settings...");
+            await new Promise<void>((resolve) => {
+                Office.context.document.settings.saveAsync((result) => {
+                    console.log("saveAsync callback received. Status:", result.status);
+                    if (result.status === Office.AsyncResultStatus.Failed) {
+                        console.error('Failed to save to Document Settings:', result.error);
+                    } else {
+                        console.log('Saved Last Update to Document Settings.');
+                    }
+                    resolve();
+                });
             });
-        });
+        } catch (settingsError) {
+            console.error("Critical error in settings fallback:", settingsError);
+        }
     }
 }
 
