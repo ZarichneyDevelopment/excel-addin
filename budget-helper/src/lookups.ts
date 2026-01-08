@@ -15,20 +15,32 @@ export async function initializeSchema() {
 
 export async function getLastUpdateDate(): Promise<Date | null> {
     return new Promise((resolve, reject) => {
+        // Try Named Range first
         NamedRangeValues$('LastRolloverUpdate').pipe(
             toArray(),
             tap(values => {
                 if (values.length > 0 && values[0]) {
                     resolve(new Date(values[0]));
                 } else {
-                    resolve(null);
+                    // Fallback to Document Settings
+                    const setting = Office.context.document.settings.get('LastRolloverUpdate');
+                    if (setting) {
+                        resolve(new Date(setting));
+                    } else {
+                        resolve(null);
+                    }
                 }
             })
         ).subscribe({
             error(err) { 
-                // If range doesn't exist or error, resolve null to be safe
-                console.warn('Could not fetch LastRolloverUpdate:', err);
-                resolve(null); 
+                console.warn('Could not fetch LastRolloverUpdate from Named Range, trying Settings:', err);
+                // Fallback to Document Settings on error
+                const setting = Office.context.document.settings.get('LastRolloverUpdate');
+                if (setting) {
+                    resolve(new Date(setting));
+                } else {
+                    resolve(null); 
+                }
             },
         });
     });
@@ -36,7 +48,23 @@ export async function getLastUpdateDate(): Promise<Date | null> {
 
 export async function setLastUpdateDate(date: Date): Promise<void> {
     const dateString = date.toISOString().split('T')[0]; // YYYY-MM-DD
-    return SetNamedRangeValue('LastRolloverUpdate', dateString);
+    
+    try {
+        await SetNamedRangeValue('LastRolloverUpdate', dateString);
+    } catch (error) {
+        console.warn('Failed to set Named Range for Last Update, falling back to Document Settings.', error);
+        Office.context.document.settings.set('LastRolloverUpdate', dateString);
+        await new Promise<void>((resolve) => {
+            Office.context.document.settings.saveAsync((result) => {
+                if (result.status === Office.AsyncResultStatus.Failed) {
+                    console.error('Failed to save to Document Settings:', result.error);
+                } else {
+                    console.log('Saved Last Update to Document Settings.');
+                }
+                resolve();
+            });
+        });
+    }
 }
 
 export async function getAccounts(): Promise<{ [key: string]: string }> {
