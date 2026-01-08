@@ -68,6 +68,7 @@ export async function AddToTable(tableName: string, data: any) {
 
 export async function WriteToTable(tableName: string, data: any[]) {
     try {
+        console.log(`WriteToTable called for '${tableName}' with ${data.length} rows.`);
 
         if (data.length === 0) {
             console.warn("No data to write to table '" + tableName + "'.");
@@ -75,7 +76,7 @@ export async function WriteToTable(tableName: string, data: any[]) {
         }
 
         await Excel.run(async (context) => {
-
+            console.log(`WriteToTable: Getting table '${tableName}'...`);
             const table = context.workbook.tables.getItemOrNullObject(tableName);
             await context.sync(); // Ensure table is loaded or null if not found
 
@@ -83,12 +84,14 @@ export async function WriteToTable(tableName: string, data: any[]) {
                 throw new Error(`Table "${tableName}" not found.`);
             }
 
+            console.log(`WriteToTable: Adding rows to '${tableName}'...`);
             const addedRows = table.rows.add(null, data);
 
             // Load the address of the added rows to access them later for formatting
             // addedRows.load("address");
 
             await context.sync();
+            console.log(`WriteToTable: Successfully added rows to '${tableName}'.`);
 
             // Example: Set number format for the first column of the added rows
             // const range = context.workbook.worksheets.getActiveWorksheet().getRange(addedRows.address);
@@ -97,7 +100,7 @@ export async function WriteToTable(tableName: string, data: any[]) {
             // await context.sync();
         });
     } catch (error) {
-        console.error("Error writing to table:", error);
+        console.error(`Error writing to table '${tableName}':`, error);
         console.error("Could not add data to table '" + tableName + "':", data);
         throw error; // Rethrow to ensure calling code is aware of the failure
     }
@@ -123,13 +126,16 @@ export async function UpdateTableRow(tableName: string, rowIndex: number, data: 
 
 export async function UpdateTableRows(tableName: string, updates: { rowIndex: number, data: any }[]) {
     if (updates.length === 0) return;
+    console.log(`UpdateTableRows called for '${tableName}' with ${updates.length} updates.`);
 
     await Excel.run(async (context) => {
+        console.log(`UpdateTableRows: Getting table '${tableName}'...`);
         const table = context.workbook.tables.getItem(tableName);
         const headers = table.getHeaderRowRange().load('values');
         await context.sync();
 
         const headerValues = headers.values[0];
+        console.log(`UpdateTableRows: Processing updates for '${tableName}'...`);
 
         updates.forEach(update => {
             const rowRange = table.getDataBodyRange().getRow(update.rowIndex);
@@ -137,9 +143,11 @@ export async function UpdateTableRows(tableName: string, updates: { rowIndex: nu
             rowRange.values = [updatedValues];
         });
 
+        console.log(`UpdateTableRows: Syncing updates for '${tableName}'...`);
         await context.sync();
+        console.log(`UpdateTableRows: Successfully updated rows in '${tableName}'.`);
     }).catch(error => {
-        console.error("Error updating rows in table:", error);
+        console.error(`Error updating rows in table '${tableName}':`, error);
         throw error;
     });
 }
@@ -182,7 +190,9 @@ export async function EnsureTableExists(tableName: string, columns: string[], sh
 }
 
 export async function SetNamedRangeValue(rangeName: string, value: any) {
+    console.log(`SetNamedRangeValue called for '${rangeName}' with value '${value}'.`);
     await Excel.run(async (context) => {
+        console.log(`SetNamedRangeValue: Getting named item '${rangeName}'...`);
         let namedItem = context.workbook.names.getItemOrNullObject(rangeName);
         await context.sync();
 
@@ -197,9 +207,11 @@ export async function SetNamedRangeValue(rangeName: string, value: any) {
             }
         }
 
+        console.log(`SetNamedRangeValue: Setting value for '${rangeName}'...`);
         const range = namedItem.getRange();
         range.values = [[value]]; // Range values must be 2D array
         await context.sync();
+        console.log(`SetNamedRangeValue: Successfully set value for '${rangeName}'.`);
     }).catch(error => {
         console.error(`Error setting named range '${rangeName}':`, error);
         throw error;

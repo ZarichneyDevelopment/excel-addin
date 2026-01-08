@@ -32,19 +32,52 @@ ${stackTrace}
 
 export function copyErrorToClipboard() {
     const errorDetails = document.getElementById('error-details');
-    if (errorDetails) {
-        navigator.clipboard.writeText(errorDetails.textContent || '')
-            .then(() => {
-                const copyBtn = document.getElementById('error-copy-btn');
-                if (copyBtn) {
-                    const originalText = copyBtn.textContent;
-                    copyBtn.textContent = 'Copied!';
-                    setTimeout(() => copyBtn.textContent = originalText, 2000);
-                }
-            })
+    if (!errorDetails) return;
+
+    const text = errorDetails.textContent || '';
+
+    // Try modern API
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text)
+            .then(showCopySuccess)
             .catch(err => {
-                console.error('Failed to copy error: ', err);
+                console.warn('Clipboard API failed, trying fallback', err);
+                fallbackCopyText(text);
             });
+    } else {
+        fallbackCopyText(text);
+    }
+}
+
+function fallbackCopyText(text: string) {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    
+    // Ensure it's not visible but part of the DOM
+    textArea.style.position = "fixed";
+    textArea.style.left = "-9999px";
+    document.body.appendChild(textArea);
+    
+    textArea.focus();
+    textArea.select();
+    
+    try {
+        const successful = document.execCommand('copy');
+        if (successful) showCopySuccess();
+        else console.error('Fallback copy failed.');
+    } catch (err) {
+        console.error('Fallback copy failed', err);
+    }
+    
+    document.body.removeChild(textArea);
+}
+
+function showCopySuccess() {
+    const copyBtn = document.getElementById('error-copy-btn');
+    if (copyBtn) {
+        const originalText = copyBtn.textContent;
+        copyBtn.textContent = 'Copied!';
+        setTimeout(() => copyBtn.textContent = originalText, 2000);
     }
 }
 
