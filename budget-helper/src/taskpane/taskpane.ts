@@ -47,8 +47,17 @@ function installConsoleTeeToTaskpane() {
   };
 }
 
+async function ensureDomReady(): Promise<void> {
+  if (document.readyState !== 'loading') return;
+  await new Promise<void>((resolve) => {
+    document.addEventListener('DOMContentLoaded', () => resolve(), { once: true });
+  });
+}
+
 async function initializeTaskpane() {
   try {
+    await ensureDomReady();
+
     installConsoleTeeToTaskpane();
     logToConsole('Verbose logging enabled (capturing console output).', 'info');
     logToConsole('Initializing...', 'info');
@@ -258,22 +267,32 @@ export async function TriggerResetRollovers() {
   }
 }
 
-	async function populateExpenseDropdown() {
-	  try {
-	    logToConsole('Loading expense categories...', 'info');
-	    const expenseList = await getExpenseList();
-	    const expenseDropdown = document.getElementById('expense-dropdown') as HTMLSelectElement;
+async function populateExpenseDropdown() {
+  try {
+    logToConsole('Loading expense categories...', 'info');
+    const expenseList = await getExpenseList();
+    const expenseDropdown = document.getElementById('expense-dropdown') as HTMLSelectElement;
+    if (!expenseDropdown) {
+      logToConsole('Expense dropdown element not found.', 'error');
+      return;
+    }
 
-	    // Ensure the dropdown is clear before adding new options
-	    expenseDropdown.innerHTML = '<option value="">All Expenses</option>';
+    // Ensure the dropdown is clear before adding new options
+    expenseDropdown.replaceChildren();
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.text = 'All Expenses';
+    expenseDropdown.appendChild(defaultOption);
 
     for (const expense of expenseList) {
       const option = document.createElement('option');
       option.value = option.text = expense;
-      expenseDropdown.add(option);
-	    }
-	    logToConsole(`Loaded ${expenseList.length} expense categories.`, 'info');
-	  } catch (error) {
-	    handleError(error, 'populateExpenseDropdown');
-	  }
-	}
+      expenseDropdown.appendChild(option);
+    }
+    const sample = expenseList.slice(0, 3).join(', ');
+    logToConsole(`Loaded ${expenseList.length} expense categories.`, 'info');
+    logToConsole(`Dropdown now has ${expenseDropdown.options.length} options (sample: ${sample || 'n/a'}).`, 'info');
+  } catch (error) {
+    handleError(error, 'populateExpenseDropdown');
+  }
+}

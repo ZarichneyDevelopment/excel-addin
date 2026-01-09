@@ -74,9 +74,12 @@ describe('Excel Helpers', () => {
       };
       const namedItem = {
         getRange: jest.fn(() => rangeAccessor),
+        load: jest.fn().mockReturnThis(),
+        type: 'Range',
+        isNullObject: false,
       };
 
-      context.workbook.names.getItem.mockReturnValue(namedItem);
+      context.workbook.names.getItemOrNullObject.mockReturnValue(namedItem);
 
       const emitted: string[] = [];
       await new Promise<void>((resolve) => {

@@ -4,7 +4,41 @@ import { Observable } from 'rxjs';
 export function NamedRangeValues$(rangeName: string): Observable<string> {
     return new Observable(observer => {
         Excel.run(async (context) => {
-            const namedItem = context.workbook.names.getItem(rangeName);
+            const namedItem = context.workbook.names.getItemOrNullObject(rangeName);
+            namedItem.load('type');
+
+            try {
+                await context.sync();
+            } catch (error) {
+                console.error("Error getting range named '" + rangeName + "':", error);
+                throw error; // Rethrow to ensure calling code is aware of the failure
+            }
+
+            if (namedItem.isNullObject) {
+                observer.next('Named range is empty or does not exist');
+                observer.complete();
+                return;
+            }
+
+            const namedType = String((namedItem as any).type || '');
+            if (namedType.toLowerCase() !== 'range') {
+                try {
+                    (namedItem as any).load('value');
+                    await context.sync();
+                    const value = (namedItem as any).value;
+                    if (value !== undefined && value !== null && value !== '') {
+                        observer.next(String(value));
+                    } else {
+                        observer.next('Named range is empty or does not exist');
+                    }
+                } catch (error) {
+                    console.warn("Named item is not a range and value could not be read:", error);
+                    observer.next('Named range is empty or does not exist');
+                }
+                observer.complete();
+                return;
+            }
+
             const range = namedItem.getRange().getUsedRange();
             range.load('values');
 
@@ -223,4 +257,3 @@ export async function SetNamedRangeValue(rangeName: string, value: any) {
         console.warn(`Excel.run failed in SetNamedRangeValue for '${rangeName}':`, error);
     });
 }
-
