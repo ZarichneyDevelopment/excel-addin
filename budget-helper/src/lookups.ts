@@ -1,5 +1,6 @@
 import { filter, map, of, reduce, switchMap, tap, toArray } from 'rxjs';
 import { NamedRangeValues$, SetNamedRangeValue, EnsureTableExists, TableRows$ } from './excel-helpers';
+import { selectBudgetHistoryEntry, parseBudgetAmount, BudgetHistoryEntry } from './budget-history';
 import { RolloverEntry } from './rollover';
 import { Transaction } from './transaction';
 import * as rollover from './rollover';
@@ -266,22 +267,26 @@ export async function getBudget(expense: string, month: number | null = null, ye
         if (month && year) {
             // Request for specific month and year, look first into change history
             dataSource$ = TableRows$('BudgetHistory').pipe(
-                filter(row => row['Expense'] === expense),
-                filter(row => (row['Month Start'] <= month && month <= row['Month End'])
-                    && (row['Year Start'] <= year && year <= row['Year End'])
-                ),
                 toArray(),
                 switchMap(rows => {
+                    const { entry, matches } = selectBudgetHistoryEntry(
+                        rows as BudgetHistoryEntry[],
+                        expense,
+                        month,
+                        year
+                    );
 
-                    if (rows.length > 1) {
-                        console.warn("Unexpected multiple rollover entries found for the same month, year, and expense", rows);
-                        debugger;
-                    } else if (rows.length === 1) {
-                        // Match found, continue
-                        return of(rows[0].Amount);
+                    if (matches.length > 1) {
+                        console.warn(
+                            "Unexpected multiple BudgetHistory matches for the same month/year/expense",
+                            matches
+                        );
+                    }
+                    if (entry) {
+                        return of(entry.Amount);
                     }
 
-                    // If no historical entry are found, resume fetching from current budget
+                    // If no historical entry is found, resume fetching from current budget
                     return currentBudget$;
                 })
             );
@@ -289,7 +294,7 @@ export async function getBudget(expense: string, month: number | null = null, ye
 
         dataSource$.pipe(
             toArray(),
-            tap(values => resolve(parseFloat(values[0])))
+            tap(values => resolve(parseBudgetAmount(values[0])))
         ).subscribe({
             error(err) { reject(err); },
         });

@@ -2,6 +2,7 @@
 import { filter, forkJoin, from, map, of, reduce, switchMap, tap, toArray, throwError } from "rxjs";
 import { AddToTable, TableRows$, UpdateTableRow, UpdateTableRows, WriteToTable } from "./excel-helpers";
 import { getBudget, getExpenseList, getInitialAmount, getTransactions, getAllTransactions, getAllExpenseData, getAllBudgetHistory, getRollovers, setLastUpdateDate } from "./lookups";
+import { selectBudgetHistoryEntry, parseBudgetAmount, BudgetHistoryEntry } from "./budget-history";
 import { Transaction } from "./transaction";
 
 
@@ -165,17 +166,21 @@ export async function resetRollover(startingMonth: number, startingYear: number,
 
     // Helper to get budget from history or default
     const getBudgetInMemory = (expense: string, month: number, year: number): number => {
-        // Check history
-        const matches = budgetHistory.filter(row =>
-            row['Expense'] === expense &&
-            (row['Month Start'] <= month && month <= row['Month End']) &&
-            (row['Year Start'] <= year && year <= row['Year End'])
+        const { entry, matches } = selectBudgetHistoryEntry(
+            budgetHistory as BudgetHistoryEntry[],
+            expense,
+            month,
+            year
         );
+
         if (matches.length > 1 && logDetails) {
             console.warn(`Multiple BudgetHistory matches for ${expense} ${month}/${year}:`, matches);
         }
-        if (matches.length > 0) return parseFloat(matches[0].Amount);
-        
+
+        if (entry) {
+            return parseBudgetAmount(entry.Amount);
+        }
+
         // Default
         return expenseDataMap.get(expense)?.Budget || 0;
     };
@@ -298,4 +303,3 @@ export async function resetRollover(startingMonth: number, startingYear: number,
 
     await setLastUpdateDate(new Date());
 }
-
