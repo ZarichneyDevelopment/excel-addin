@@ -1,11 +1,26 @@
 /* eslint-disable no-undef */
 
+const fs = require("fs");
+const path = require("path");
+const webpack = require("webpack");
 const devCerts = require("office-addin-dev-certs");
 const CopyWebpackPlugin = require("copy-webpack-plugin");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 
 const urlDev = "https://localhost:3000/";
 const urlProd = "https://zarichneydevelopment.github.io/excel-addin/"; // GitHub Pages base URL
+
+const manifestPath = path.join(__dirname, "manifest.xml");
+let manifestVersion = "0.0.0.0";
+try {
+  const manifestXml = fs.readFileSync(manifestPath, "utf-8");
+  const match = manifestXml.match(/<Version>([^<]+)<\/Version>/);
+  if (match && match[1]) {
+    manifestVersion = match[1].trim();
+  }
+} catch (error) {
+  // Keep fallback version if manifest is unreadable.
+}
 
 async function getHttpsOptions() {
   const httpsOptions = await devCerts.getHttpsServerOptions();
@@ -54,6 +69,9 @@ module.exports = async (env, options) => {
       ],
     },
     plugins: [
+      new webpack.DefinePlugin({
+        __ADDIN_VERSION__: JSON.stringify(manifestVersion),
+      }),
       new HtmlWebpackPlugin({
         filename: "taskpane.html",
         template: "./src/taskpane/taskpane.html",

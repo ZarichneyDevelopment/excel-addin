@@ -14,6 +14,11 @@ export async function initializeSchema() {
 }
 
 export async function getLastUpdateDate(): Promise<Date | null> {
+    const setting = (Office as any)?.context?.document?.settings?.get?.('LastRolloverUpdate');
+    if (setting) {
+        return new Date(setting);
+    }
+
     return new Promise((resolve, reject) => {
         // Try Named Range first
         NamedRangeValues$('LastRolloverUpdate').pipe(
@@ -23,16 +28,14 @@ export async function getLastUpdateDate(): Promise<Date | null> {
                     resolve(new Date(values[0]));
                 } else {
                     // Fallback to Document Settings
-                    const setting = (Office as any)?.context?.document?.settings?.get?.('LastRolloverUpdate');
-                    resolve(setting ? new Date(setting) : null);
+                    resolve(null);
                 }
             })
         ).subscribe({
             error(err) { 
                 console.warn('Could not fetch LastRolloverUpdate from Named Range, trying Settings:', err);
                 // Fallback to Document Settings on error
-                const setting = (Office as any)?.context?.document?.settings?.get?.('LastRolloverUpdate');
-                resolve(setting ? new Date(setting) : null);
+                resolve(null);
             },
         });
     });

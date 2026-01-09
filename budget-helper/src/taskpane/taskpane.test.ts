@@ -48,6 +48,7 @@ describe('Taskpane', () => {
       <button id="reset"></button>
       <input id="month-input" type="number" />
       <input id="year-input" type="number" />
+      <span id="app-version"></span>
       <span id="last-updated"></span>
       <select id="expense-dropdown"><option value="">(stale)</option></select>
       <div id="console-output"></div>

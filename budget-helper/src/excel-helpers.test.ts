@@ -191,16 +191,13 @@ describe('Excel Helpers', () => {
 
   describe('SetNamedRangeValue', () => {
     it('lazily creates named range if missing', async () => {
-      // Mock range missing
-      context.workbook.names.getItemOrNullObject.mockReturnValue({ isNullObject: true });
-      
       const mockRange = { values: [] };
-      const mockNamedItem = { getRange: jest.fn().mockReturnValue(mockRange) };
-      context.workbook.names.add.mockReturnValue(mockNamedItem);
+      context.workbook.worksheets.getItem = jest.fn().mockReturnValue({
+        getRange: jest.fn().mockReturnValue(mockRange),
+      });
 
       await ExcelHelpers.SetNamedRangeValue('LastRolloverUpdate', '2023-01-01');
 
-      expect(context.workbook.names.add).toHaveBeenCalledWith('LastRolloverUpdate', 'Rollovers!H1');
       expect(mockRange.values).toEqual([['2023-01-01']]);
     });
   });

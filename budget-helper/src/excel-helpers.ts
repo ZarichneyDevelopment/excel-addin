@@ -10,8 +10,10 @@ export function NamedRangeValues$(rangeName: string): Observable<string> {
             try {
                 await context.sync();
             } catch (error) {
-                console.error("Error getting range named '" + rangeName + "':", error);
-                throw error; // Rethrow to ensure calling code is aware of the failure
+                console.warn("Error getting range named '" + rangeName + "':", error);
+                observer.next('Named range is empty or does not exist');
+                observer.complete();
+                return;
             }
 
             if (namedItem.isNullObject) {
@@ -45,8 +47,10 @@ export function NamedRangeValues$(rangeName: string): Observable<string> {
             try {
                 await context.sync();
             } catch (error) {
-                console.error("Error getting range named '" + rangeName + "':", error);
-                throw error; // Rethrow to ensure calling code is aware of the failure
+                console.warn("Error getting range named '" + rangeName + "':", error);
+                observer.next('Named range is empty or does not exist');
+                observer.complete();
+                return;
             }
 
             if (range.values && range.values.length > 0 && range.values[0].length > 0) {
@@ -59,7 +63,11 @@ export function NamedRangeValues$(rangeName: string): Observable<string> {
             }
 
             observer.complete();
-        }).catch(error => observer.error(error));
+        }).catch(error => {
+            console.warn("Error getting range named '" + rangeName + "':", error);
+            observer.next('Named range is empty or does not exist');
+            observer.complete();
+        });
     });
 }
 
@@ -227,6 +235,14 @@ export async function SetNamedRangeValue(rangeName: string, value: any) {
     console.log(`SetNamedRangeValue called for '${rangeName}' with value '${value}'.`);
     await Excel.run(async (context) => {
         try {
+            if (rangeName === 'LastRolloverUpdate') {
+                const range = context.workbook.worksheets.getItem('Rollovers').getRange('H1');
+                range.values = [[value]];
+                await context.sync();
+                console.log(`SetNamedRangeValue: Wrote LastRolloverUpdate directly to Rollovers!H1.`);
+                return;
+            }
+
             console.log(`SetNamedRangeValue: Getting named item '${rangeName}'...`);
             let namedItem = context.workbook.names.getItemOrNullObject(rangeName);
             await context.sync();

@@ -4,6 +4,8 @@ import { resetRollover } from '../rollover';
 import { closeErrorConsole, copyErrorToClipboard, handleError } from '../error-handler';
 import { logToConsole, logToTaskpane, clearConsole } from '../logger';
 
+declare const __ADDIN_VERSION__: string | undefined;
+
 const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 let consoleTeeInstalled = false;
@@ -59,6 +61,11 @@ async function initializeTaskpane() {
     await ensureDomReady();
 
     installConsoleTeeToTaskpane();
+    const versionLabel = document.getElementById('app-version');
+    if (versionLabel) {
+      const version = typeof __ADDIN_VERSION__ !== 'undefined' ? __ADDIN_VERSION__ : 'dev';
+      versionLabel.textContent = `v${version}`;
+    }
     logToConsole('Verbose logging enabled (capturing console output).', 'info');
     logToConsole('Initializing...', 'info');
 
