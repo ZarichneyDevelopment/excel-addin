@@ -3,12 +3,14 @@ import { preventDefaults, handleFileDrop } from '../file-drop';
 import { resetRollover } from '../rollover';
 import { closeErrorConsole, copyErrorToClipboard, handleError } from '../error-handler';
 import { logToConsole, logToTaskpane, clearConsole } from '../logger';
+import { WriteToTable } from '../excel-helpers';
 
 declare const __ADDIN_VERSION__: string | undefined;
 
 const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 let consoleTeeInstalled = false;
+const defaultFeature = 'ingestion';
 
 function safeFormatConsoleArgs(args: unknown[]): string {
   const formatted = args.map(arg => {
@@ -61,6 +63,7 @@ async function initializeTaskpane() {
     await ensureDomReady();
 
     installConsoleTeeToTaskpane();
+    initializeFeatureSwitcher();
     const versionLabel = document.getElementById('app-version');
     if (versionLabel) {
       const version = typeof __ADDIN_VERSION__ !== 'undefined' ? __ADDIN_VERSION__ : 'dev';
@@ -91,6 +94,81 @@ function getSelect(id: string): HTMLSelectElement | null {
   const element = document.getElementById(id);
   if (!element) return null;
   return element as HTMLSelectElement;
+}
+
+function setActiveFeature(feature: string) {
+  const panels = Array.from(document.querySelectorAll<HTMLElement>('.feature-panel'));
+  if (panels.length === 0) return;
+
+  let matched = false;
+  panels.forEach(panel => {
+    const panelFeature = panel.dataset.feature;
+    const isActive = panelFeature === feature;
+    panel.classList.toggle('is-hidden', !isActive);
+    if (isActive) matched = true;
+  });
+
+  const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('.feature-tab'));
+  tabs.forEach(tab => {
+    const tabFeature = tab.dataset.feature;
+    const isActive = tabFeature === feature;
+    tab.classList.toggle('is-active', isActive);
+  });
+
+  if (!matched && feature !== defaultFeature) {
+    setActiveFeature(defaultFeature);
+  }
+}
+
+function initializeFeatureSwitcher() {
+  const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('.feature-tab'));
+  if (tabs.length === 0) return;
+
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const feature = tab.dataset.feature || defaultFeature;
+      setActiveFeature(feature);
+    });
+  });
+
+  setActiveFeature(defaultFeature);
+}
+
+function setSelectOptions(select: HTMLSelectElement, options: string[], defaultLabel: string) {
+  select.replaceChildren();
+  const defaultOption = document.createElement('option');
+  defaultOption.value = '';
+  defaultOption.text = defaultLabel;
+  select.appendChild(defaultOption);
+
+  for (const optionLabel of options) {
+    const option = document.createElement('option');
+    option.value = option.text = optionLabel;
+    select.appendChild(option);
+  }
+}
+
+function parseAmountInput(value: string): number | null {
+  const cleaned = value.replace(/,/g, '').trim();
+  if (!cleaned) return null;
+  const parsed = Number(cleaned);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+function formatAmount(amount: number): string {
+  return amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function createTransferRef(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof (crypto as Crypto).randomUUID === 'function') {
+      return (crypto as Crypto).randomUUID();
+    }
+  } catch {
+    // Fall through to deterministic fallback.
+  }
+  return `xfer-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 function getStartMonthYearFromInputs(): { month: number | null, year: number | null } {
@@ -239,6 +317,9 @@ Office.onReady((info) => {
 
     document.addEventListener('budgethelper:inputs-changed', () => updateRecalcButtonLabel());
 
+    const transferButton = document.getElementById('transfer-btn');
+    transferButton?.addEventListener?.('click', TriggerBudgetTransfer);
+
     // `window.onload` can fire before this handler is assigned in Office taskpanes.
     // Initialize immediately once Office is ready and the DOM is present.
     void initializeTaskpane();
@@ -274,6 +355,68 @@ export async function TriggerResetRollovers() {
   }
 }
 
+export async function TriggerBudgetTransfer() {
+  try {
+    const fromSelect = getSelect('transfer-from');
+    const toSelect = getSelect('transfer-to');
+    const amountInput = getNumberInput('transfer-amount');
+
+    if (!fromSelect || !toSelect || !amountInput) {
+      logToConsole('Transfer controls are missing.', 'error');
+      return;
+    }
+
+    const from = fromSelect.value.trim();
+    const to = toSelect.value.trim();
+    const amount = parseAmountInput(amountInput.value);
+
+    if (!from) {
+      logToConsole('Select a source bucket for the transfer.', 'warn');
+      return;
+    }
+
+    if (!to) {
+      logToConsole('Select a destination bucket for the transfer.', 'warn');
+      return;
+    }
+
+    if (from === to) {
+      logToConsole('Source and destination buckets must be different.', 'warn');
+      return;
+    }
+
+    if (amount === null) {
+      logToConsole('Enter a transfer amount greater than zero.', 'warn');
+      return;
+    }
+
+    const now = new Date();
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
+    const date = now.toLocaleDateString();
+    const timestamp = now.toLocaleString();
+    const account = 'Budget Transfer';
+    const description = 'Bucket Transfer';
+
+    const transferRef = createTransferRef();
+    const memoOut = `Transfer to ${to} (${transferRef}) @ ${timestamp}`;
+    const memoIn = `Transfer from ${from} (${transferRef}) @ ${timestamp}`;
+
+    const rows = [
+      [`${transferRef}-out`, month, year, date, account, from, -amount, description, memoOut],
+      [`${transferRef}-in`, month, year, date, account, to, amount, description, memoIn],
+    ];
+
+    await WriteToTable('Transactions', rows);
+
+    logToConsole(`Transfer saved: ${formatAmount(amount)} from ${from} → ${to}.`, 'success');
+    amountInput.value = '';
+  } catch (error) {
+    handleError(error, 'TriggerBudgetTransfer');
+    logToConsole('Error adding transfer.', 'error');
+  }
+}
+
 async function populateExpenseDropdown() {
   try {
     logToConsole('Loading expense categories...', 'info');
@@ -284,18 +427,16 @@ async function populateExpenseDropdown() {
       return;
     }
 
-    // Ensure the dropdown is clear before adding new options
-    expenseDropdown.replaceChildren();
-    const defaultOption = document.createElement('option');
-    defaultOption.value = '';
-    defaultOption.text = 'All Expenses';
-    expenseDropdown.appendChild(defaultOption);
-
-    for (const expense of expenseList) {
-      const option = document.createElement('option');
-      option.value = option.text = expense;
-      expenseDropdown.appendChild(option);
+    setSelectOptions(expenseDropdown, expenseList, 'All Expenses');
+    const transferFrom = getSelect('transfer-from');
+    if (transferFrom) {
+      setSelectOptions(transferFrom, expenseList, 'From');
     }
+    const transferTo = getSelect('transfer-to');
+    if (transferTo) {
+      setSelectOptions(transferTo, expenseList, 'To');
+    }
+
     const sample = expenseList.slice(0, 3).join(', ');
     logToConsole(`Loaded ${expenseList.length} expense categories.`, 'info');
     logToConsole(`Dropdown now has ${expenseDropdown.options.length} options (sample: ${sample || 'n/a'}).`, 'info');

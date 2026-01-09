@@ -87,6 +87,45 @@ body {
     overflow-y: auto;
 }
 
+.feature-tabs {
+    display: flex;
+    gap: 8px;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px;
+}
+
+.feature-tab {
+    flex: 1;
+    border: 1px solid transparent;
+    background-color: transparent;
+    color: var(--text-dim);
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    transition: all 0.2s ease;
+}
+
+.feature-tab:hover {
+    color: var(--text-main);
+    border-color: var(--border);
+}
+
+.feature-tab.is-active {
+    background-color: rgba(255, 140, 0, 0.15);
+    color: var(--text-main);
+    border-color: var(--primary-orange);
+}
+
+.feature-panel.is-hidden {
+    display: none;
+}
+
 .card {
     background-color: var(--bg-card);
     border: 1px solid var(--border);
@@ -156,6 +195,10 @@ body {
     gap: 5px;
 }
 
+.select-wrapper {
+    flex: 1;
+}
+
 label {
     font-size: 0.8rem;
     color: var(--text-dim);
@@ -209,6 +252,50 @@ input:focus, select:focus {
     font-size: 0.8rem;
     color: var(--text-dim);
     line-height: 1.3;
+}
+
+/* Transfers */
+.transfer-card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.transfer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+}
+
+.transfer-hint {
+    font-size: 0.7rem;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--text-dim);
+}
+
+.transfer-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.transfer-row + .transfer-row {
+    align-items: flex-end;
+}
+
+.transfer-row + .transfer-row .btn-secondary {
+    margin-top: 18px;
+}
+
+.transfer-arrow {
+    color: var(--primary-orange);
+    font-size: 1.2rem;
+    line-height: 1;
 }
 
 /* Console */

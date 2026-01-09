@@ -51,6 +51,10 @@ describe('Taskpane', () => {
       <span id="app-version"></span>
       <span id="last-updated"></span>
       <select id="expense-dropdown"><option value="">(stale)</option></select>
+      <select id="transfer-from"><option value="">(stale)</option></select>
+      <select id="transfer-to"><option value="">(stale)</option></select>
+      <input id="transfer-amount" type="number" />
+      <button id="transfer-btn"></button>
       <div id="console-output"></div>
     `;
 
@@ -95,6 +99,16 @@ describe('Taskpane', () => {
     expect(select.options[0].text).toBe('All Expenses');
     expect(select.options[1].text).toBe('Rent');
     expect(select.options[2].text).toBe('Food');
+    const transferFrom = document.getElementById('transfer-from') as HTMLSelectElement;
+    const transferTo = document.getElementById('transfer-to') as HTMLSelectElement;
+    expect(transferFrom.options.length).toBe(3);
+    expect(transferFrom.options[0].text).toBe('From');
+    expect(transferFrom.options[1].text).toBe('Rent');
+    expect(transferFrom.options[2].text).toBe('Food');
+    expect(transferTo.options.length).toBe(3);
+    expect(transferTo.options[0].text).toBe('To');
+    expect(transferTo.options[1].text).toBe('Rent');
+    expect(transferTo.options[2].text).toBe('Food');
     expect(mockLookups.getExpenseList).toHaveBeenCalled();
   });
 });
