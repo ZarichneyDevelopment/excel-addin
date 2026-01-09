@@ -84,8 +84,9 @@ describe('Taskpane', () => {
   it('populates the expense dropdown with all Expense Types', async () => {
     await import('./taskpane');
 
-    expect(typeof window.onload).toBe('function');
-    await (window.onload as any)();
+    // Initialization runs automatically on Office.onReady; wait for async setup.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     const select = document.getElementById('expense-dropdown') as HTMLSelectElement;
     expect(select).toBeTruthy();
@@ -96,4 +97,3 @@ describe('Taskpane', () => {
     expect(mockLookups.getExpenseList).toHaveBeenCalled();
   });
 });
-

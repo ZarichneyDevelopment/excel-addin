@@ -47,6 +47,24 @@ function installConsoleTeeToTaskpane() {
   };
 }
 
+async function initializeTaskpane() {
+  try {
+    installConsoleTeeToTaskpane();
+    logToConsole('Verbose logging enabled (capturing console output).', 'info');
+    logToConsole('Initializing...', 'info');
+
+    await initializeSchema();
+    await populateExpenseDropdown();
+    await updateLastSyncInfo();
+    updateRecalcButtonLabel();
+
+    logToConsole('Ready.', 'success');
+  } catch (error) {
+    handleError(error, 'initializeTaskpane');
+    logToConsole('Initialization failed.', 'error');
+  }
+}
+
 function getNumberInput(id: string): HTMLInputElement | null {
   const element = document.getElementById(id);
   if (!element) return null;
@@ -150,6 +168,8 @@ async function updateLastSyncInfo() {
 
 Office.onReady((info) => {
   if (info.host === Office.HostType.Excel) {
+    installConsoleTeeToTaskpane();
+    logToConsole('Office ready (Excel).', 'info');
 
     // Error Console Bindings
     document.getElementById('error-close-btn').addEventListener('click', closeErrorConsole);
@@ -203,16 +223,9 @@ Office.onReady((info) => {
 
     document.addEventListener('budgethelper:inputs-changed', () => updateRecalcButtonLabel());
 
-    window.onload = async () => {
-        installConsoleTeeToTaskpane();
-        logToConsole('Verbose logging enabled (capturing console output).', 'info');
-        logToConsole('Initializing...');
-        await initializeSchema();
-        await populateExpenseDropdown();
-        await updateLastSyncInfo();
-        updateRecalcButtonLabel();
-        logToConsole('Ready.');
-    };
+    // `window.onload` can fire before this handler is assigned in Office taskpanes.
+    // Initialize immediately once Office is ready and the DOM is present.
+    void initializeTaskpane();
   }
 });
 
@@ -245,21 +258,22 @@ export async function TriggerResetRollovers() {
   }
 }
 
-async function populateExpenseDropdown() {
-  try {
-    const expenseList = await getExpenseList();
-    const expenseDropdown = document.getElementById('expense-dropdown') as HTMLSelectElement;
+	async function populateExpenseDropdown() {
+	  try {
+	    logToConsole('Loading expense categories...', 'info');
+	    const expenseList = await getExpenseList();
+	    const expenseDropdown = document.getElementById('expense-dropdown') as HTMLSelectElement;
 
-    // Ensure the dropdown is clear before adding new options
-    expenseDropdown.innerHTML = '<option value="">All Expenses</option>';
+	    // Ensure the dropdown is clear before adding new options
+	    expenseDropdown.innerHTML = '<option value="">All Expenses</option>';
 
     for (const expense of expenseList) {
       const option = document.createElement('option');
       option.value = option.text = expense;
       expenseDropdown.add(option);
-    }
-    logToConsole(`Loaded ${expenseList.length} expense categories.`, 'info');
-  } catch (error) {
-    handleError(error, 'populateExpenseDropdown');
-  }
-}
+	    }
+	    logToConsole(`Loaded ${expenseList.length} expense categories.`, 'info');
+	  } catch (error) {
+	    handleError(error, 'populateExpenseDropdown');
+	  }
+	}
