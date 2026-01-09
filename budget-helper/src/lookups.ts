@@ -18,27 +18,30 @@ export async function getLastUpdateDate(): Promise<Date | null> {
     if (setting) {
         return new Date(setting);
     }
+    try {
+        const cellValue = await Excel.run(async (context) => {
+            const sheet = context.workbook.worksheets.getItemOrNullObject('Rollovers');
+            sheet.load('name');
+            await context.sync();
 
-    return new Promise((resolve, reject) => {
-        // Try Named Range first
-        NamedRangeValues$('LastRolloverUpdate').pipe(
-            toArray(),
-            tap(values => {
-                if (values.length > 0 && values[0]) {
-                    resolve(new Date(values[0]));
-                } else {
-                    // Fallback to Document Settings
-                    resolve(null);
-                }
-            })
-        ).subscribe({
-            error(err) { 
-                console.warn('Could not fetch LastRolloverUpdate from Named Range, trying Settings:', err);
-                // Fallback to Document Settings on error
-                resolve(null);
-            },
+            if ((sheet as any).isNullObject) {
+                return null;
+            }
+
+            const range = sheet.getRange('H1');
+            range.load('values');
+            await context.sync();
+            return range.values?.[0]?.[0] ?? null;
         });
-    });
+
+        if (cellValue) {
+            return new Date(cellValue);
+        }
+    } catch (error) {
+        console.warn('Could not read Rollovers!H1 for LastRolloverUpdate:', error);
+    }
+
+    return null;
 }
 
 export async function setLastUpdateDate(date: Date): Promise<void> {

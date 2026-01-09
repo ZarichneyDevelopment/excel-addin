@@ -109,6 +109,7 @@ export async function updateRollover(entry: RolloverEntry): Promise<void> {
 export async function resetRollover(startingMonth: number, startingYear: number, expense: string | null = null): Promise<void> {
 
     let expenses: string[];
+    const logDetails = expense !== null;
 
     if (expense) {
         expenses = [expense];
@@ -136,14 +137,17 @@ export async function resetRollover(startingMonth: number, startingYear: number,
         rolloverMap.set(key, { entry, index });
     });
 
-    // Map: "Month-Year-Expense" -> totalAmount
-    const transactionMap = new Map<string, number>();
+    // Map: "Month-Year-Expense" -> { total, count }
+    const transactionMap = new Map<string, { total: number, count: number }>();
     allTransactions.forEach(t => {
         // Ensure Transaction has Month/Year/Expense populated (assuming they come from Excel table correctly)
         // If not, we might need to parse Date. For now assuming properties exist as in original logic.
         const key = `${t.Month}-${t.Year}-${t['Expense Type']}`;
-        const current = transactionMap.get(key) || 0;
-        transactionMap.set(key, current + (t.Amount || 0));
+        const current = transactionMap.get(key) || { total: 0, count: 0 };
+        transactionMap.set(key, {
+            total: current.total + (t.Amount || 0),
+            count: current.count + 1,
+        });
     });
 
     // Map: "Expense" -> { Budget: number, Init: number }
@@ -162,12 +166,15 @@ export async function resetRollover(startingMonth: number, startingYear: number,
     // Helper to get budget from history or default
     const getBudgetInMemory = (expense: string, month: number, year: number): number => {
         // Check history
-        const history = budgetHistory.find(row => 
+        const matches = budgetHistory.filter(row =>
             row['Expense'] === expense &&
             (row['Month Start'] <= month && month <= row['Month End']) &&
             (row['Year Start'] <= year && year <= row['Year End'])
         );
-        if (history) return parseFloat(history.Amount);
+        if (matches.length > 1 && logDetails) {
+            console.warn(`Multiple BudgetHistory matches for ${expense} ${month}/${year}:`, matches);
+        }
+        if (matches.length > 0) return parseFloat(matches[0].Amount);
         
         // Default
         return expenseDataMap.get(expense)?.Budget || 0;
@@ -216,7 +223,8 @@ export async function resetRollover(startingMonth: number, startingYear: number,
             }
 
             // Get Monthly Transactions
-            const totalAmount = transactionMap.get(`${month}-${year}-${expense}`) || 0;
+            const transactionEntry = transactionMap.get(`${month}-${year}-${expense}`);
+            const totalAmount = transactionEntry?.total || 0;
 
             // Calculate
             if (!rolloverEntry) {
@@ -234,6 +242,15 @@ export async function resetRollover(startingMonth: number, startingYear: number,
             rolloverEntry.Expenses = totalAmount;
             rolloverEntry.BOM = prevEOM;
             rolloverEntry.EOM = rolloverEntry.BOM + budget + totalAmount;
+
+            if (logDetails) {
+                const transactionCount = transactionEntry?.count || 0;
+                const prevSource = prevRolloverData ? `${previousMonth}/${previousYear}` : 'init';
+                console.log(
+                    `Rollover ${expense} ${month}/${year}: BOM ${prevEOM}, Budget ${budget}, ` +
+                    `Spent ${totalAmount} (${transactionCount} tx), EOM ${rolloverEntry.EOM} (prev: ${prevSource})`
+                );
+            }
 
             // Store result
             if (currentRolloverData) {
@@ -281,5 +298,4 @@ export async function resetRollover(startingMonth: number, startingYear: number,
 
     await setLastUpdateDate(new Date());
 }
-
 
