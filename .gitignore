@@ -1,3 +1,8 @@
 .vscode
 node_modules
 Budget.xlsx
+coverage
+unpacked
+budget-helper/dist
+site
+package-lock.json

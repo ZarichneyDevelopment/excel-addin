@@ -54,8 +54,16 @@ describe('Lookup helpers', () => {
     expect(rules).toEqual(rows);
   });
 
-  it('reads the expense list from named ranges', async () => {
-    (NamedRangeValues$ as jest.Mock).mockReturnValue(of('Rent', 'Food'));
+  it('reads the expense list from the ExpenseData table', async () => {
+    (TableRows$ as jest.Mock).mockImplementation((tableName: string) => {
+      if (tableName === 'ExpenseData') {
+        return of(
+          { 'Expense Type': 'Rent' },
+          { 'Expense Type': 'Food' }
+        );
+      }
+      return of();
+    });
 
     const expenses = await getExpenseList();
 

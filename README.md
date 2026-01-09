@@ -33,6 +33,14 @@ The add-in acts as the bridge between raw bank data and the structured `Budget.x
 
 ### The Spreadsheet (`Budget.xlsx`)
 This file is the "database" and "dashboard" of the system.
+
+Notes:
+- The live workbook is not committed to this repo.
+- This repo includes an offline copy at `Budget.backup.xlsx` for inspection and development work.
+
+Key workbook objects the add-in depends on:
+- Tables: `Transactions`, `ExpenseData`, `IncomeData`, `Rollovers`, `BudgetHistory`, `MatchingRules`, `Accounts`
+- Named ranges: `CurrentMonth`, `CurrentYear`, `TransactionIds`, `TransactionDates`, `TransactionExpenseType`, `TransactionsAmount`
 - **`Budget` Tab:** The main interface. Controlled by Month/Year inputs. It pulls "Budgeted" amounts from `ChangeHistory` (or defaults to `Expenses`), sums actuals from `Transactions`, and calculates "Remaining" values which are stamped into `Rollovers`.
 - **`Transactions` Tab:** The central ledger. All imported bank data lands here.
 - **`Rollovers` Tab:** A historical record of EOM balances for every category, allowing the budget to "remember" past performance.
@@ -45,4 +53,23 @@ This file is the "database" and "dashboard" of the system.
 - **`taskpane.ts`:** The UI layer that triggers these actions.
 
 ## 5. Maintenance & Setup
-For detailed developer setup, dependencies (Node.js, LibreOffice, Flatpak), and known issues, please refer to [GEMINI.md](GEMINI.md).
+### Repo Layout
+- `budget-helper/`: add-in source (TypeScript + Office.js)
+- `assets/`: source icons/branding
+- `docs/`: documentation
+- `tools/`: workbook tooling scripts
+
+### Developer Setup
+From `budget-helper/`:
+```bash
+npm ci
+npm test
+npm run build
+npm start
+```
+
+### Workbook Tooling
+- Unpack the offline workbook for LLM-friendly review: `python3 tools/xlsx/unpack_xlsx.py Budget.backup.xlsx unpacked/budget-backup`
+- Recalculate formulas and scan for errors (LibreOffice required): `python3 tools/xlsx/recalc.py Budget.backup.xlsx`
+
+For more detail, see `docs/maintenance.md`.

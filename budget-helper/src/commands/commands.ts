@@ -1,32 +1,14 @@
-/*
- * Copyright (c) Microsoft Corporation. All rights reserved. Licensed under the MIT license.
- * See LICENSE in the project root for license information.
- */
-
 /* global Office */
 
+// This add-in is for Excel. Keep the command handler Excel-safe (no Mailbox APIs).
 Office.onReady(() => {
-  // If needed, Office.js is ready to be called.
+  // Office.js is ready.
 });
 
-/**
- * Shows a notification when the add-in command is executed.
- * @param event
- */
 function action(event: Office.AddinCommands.Event) {
-  const message: Office.NotificationMessageDetails = {
-    type: Office.MailboxEnums.ItemNotificationMessageType.InformationalMessage,
-    message: "Performed action.",
-    icon: "Icon.80x80",
-    persistent: true,
-  };
-
-  // Show a notification message.
-  Office.context.mailbox.item.notificationMessages.replaceAsync("ActionPerformanceNotification", message);
-
-  // Be sure to indicate when the add-in command function is complete.
+  // Currently no ribbon commands are used; this exists to satisfy the manifest FunctionFile contract.
+  console.log('[Budget Helper] Command invoked: action');
   event.completed();
 }
 
-// Register the function with Office.
-Office.actions.associate("action", action);
+Office.actions.associate('action', action);

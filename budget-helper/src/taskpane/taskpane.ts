@@ -2,7 +2,125 @@ import { getExpenseList, getLastUpdateDate, initializeSchema } from '../lookups'
 import { preventDefaults, handleFileDrop } from '../file-drop';
 import { resetRollover } from '../rollover';
 import { closeErrorConsole, copyErrorToClipboard, handleError } from '../error-handler';
-import { logToConsole, clearConsole } from '../logger';
+import { logToConsole, logToTaskpane, clearConsole } from '../logger';
+
+const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+let consoleTeeInstalled = false;
+
+function safeFormatConsoleArgs(args: unknown[]): string {
+  const formatted = args.map(arg => {
+    if (typeof arg === 'string') return arg;
+    try {
+      return JSON.stringify(arg);
+    } catch {
+      return String(arg);
+    }
+  }).join(' ');
+
+  const maxLen = 2000;
+  if (formatted.length <= maxLen) return formatted;
+  return formatted.slice(0, maxLen) + '…';
+}
+
+function installConsoleTeeToTaskpane() {
+  if (consoleTeeInstalled) return;
+  consoleTeeInstalled = true;
+
+  const original = {
+    log: console.log.bind(console),
+    warn: console.warn.bind(console),
+    error: console.error.bind(console),
+  };
+
+  console.log = (...args: unknown[]) => {
+    original.log(...args);
+    logToTaskpane(safeFormatConsoleArgs(args), 'info');
+  };
+  console.warn = (...args: unknown[]) => {
+    original.warn(...args);
+    logToTaskpane(safeFormatConsoleArgs(args), 'warn');
+  };
+  console.error = (...args: unknown[]) => {
+    original.error(...args);
+    logToTaskpane(safeFormatConsoleArgs(args), 'error');
+  };
+}
+
+function getNumberInput(id: string): HTMLInputElement | null {
+  const element = document.getElementById(id);
+  if (!element) return null;
+  return element as HTMLInputElement;
+}
+
+function getSelect(id: string): HTMLSelectElement | null {
+  const element = document.getElementById(id);
+  if (!element) return null;
+  return element as HTMLSelectElement;
+}
+
+function getStartMonthYearFromInputs(): { month: number | null, year: number | null } {
+  const monthInput = getNumberInput('month-input');
+  const yearInput = getNumberInput('year-input');
+  const month = monthInput ? parseInt(monthInput.value, 10) : NaN;
+  const year = yearInput ? parseInt(yearInput.value, 10) : NaN;
+  return {
+    month: Number.isFinite(month) ? month : null,
+    year: Number.isFinite(year) ? year : null,
+  };
+}
+
+function monthYearToIndex(month: number, year: number): number {
+  // 0-based month index
+  return year * 12 + (month - 1);
+}
+
+function formatMonthYear(month: number, year: number): string {
+  const name = monthNames[month - 1] ?? `M${month}`;
+  return `${name} ${year}`;
+}
+
+function computeRecalcRangeLabel(startMonth: number, startYear: number): string | null {
+  if (startMonth < 1 || startMonth > 12 || startYear < 1900 || startYear > 2500) return null;
+
+  const today = new Date();
+  const endMonth = today.getMonth() + 1;
+  const endYear = today.getFullYear();
+
+  const startIndex = monthYearToIndex(startMonth, startYear);
+  const endIndex = monthYearToIndex(endMonth, endYear);
+  if (startIndex > endIndex) return null;
+
+  const months = (endIndex - startIndex) + 1;
+  return `Recalc ${formatMonthYear(startMonth, startYear)} → ${formatMonthYear(endMonth, endYear)} (${months} mo)`;
+}
+
+function updateRecalcButtonLabel() {
+  const button = document.getElementById('reset');
+  if (!button) return;
+
+  const { month, year } = getStartMonthYearFromInputs();
+  if (!month || !year) {
+    button.textContent = 'Recalc';
+    return;
+  }
+
+  const label = computeRecalcRangeLabel(month, year);
+  button.textContent = label ?? 'Recalc';
+}
+
+function markStartDateUserEdited() {
+  const monthInput = getNumberInput('month-input');
+  const yearInput = getNumberInput('year-input');
+  if (monthInput?.dataset) monthInput.dataset.userEdited = '1';
+  if (yearInput?.dataset) yearInput.dataset.userEdited = '1';
+}
+
+function startDateWasUserEdited(): boolean {
+  const monthInput = getNumberInput('month-input');
+  const yearInput = getNumberInput('year-input');
+  return Boolean(monthInput?.dataset?.userEdited || yearInput?.dataset?.userEdited);
+}
 
 async function updateLastSyncInfo() {
     try {
@@ -10,13 +128,18 @@ async function updateLastSyncInfo() {
         const display = document.getElementById('last-updated');
         
         if (lastDate) {
-            display.textContent = `Synced: ${lastDate.toISOString().split('T')[0]}`;
-            // Auto-populate inputs to continue from where we left off
-            (document.getElementById('month-input') as HTMLInputElement).value = (lastDate.getMonth() + 1).toString();
-            (document.getElementById('year-input') as HTMLInputElement).value = lastDate.getFullYear().toString();
+            if (display) display.textContent = `Synced: ${lastDate.toISOString().split('T')[0]}`;
+            // Auto-populate inputs to continue from where we left off, but don't stomp user edits.
+            if (!startDateWasUserEdited()) {
+              const monthInput = getNumberInput('month-input');
+              const yearInput = getNumberInput('year-input');
+              if (monthInput) monthInput.value = (lastDate.getMonth() + 1).toString();
+              if (yearInput) yearInput.value = lastDate.getFullYear().toString();
+              updateRecalcButtonLabel();
+            }
             logToConsole(`Last sync found: ${lastDate.toLocaleDateString()}`, 'info');
         } else {
-            display.textContent = 'Synced: Never';
+            if (display) display.textContent = 'Synced: Never';
             // Default to today was already set, but good to know
             logToConsole('No previous sync date found.', 'warn');
         }
@@ -37,8 +160,10 @@ Office.onReady((info) => {
 
     // Default Date Initialization (Fallback)
     const today = new Date();
-    (document.getElementById('month-input') as HTMLInputElement).value = (today.getMonth() + 1).toString();
-    (document.getElementById('year-input') as HTMLInputElement).value = today.getFullYear().toString();
+    const monthInput = getNumberInput('month-input');
+    const yearInput = getNumberInput('year-input');
+    if (monthInput) monthInput.value = (today.getMonth() + 1).toString();
+    if (yearInput) yearInput.value = today.getFullYear().toString();
 
     // Drop Zone Setup
     let dropArea = document.getElementById('drop-area');
@@ -63,11 +188,29 @@ Office.onReady((info) => {
 
     document.getElementById("reset").onclick = TriggerResetRollovers;
 
+    // Keep UX stable: if user edits start date, never overwrite it automatically.
+    monthInput?.addEventListener?.('input', () => {
+      markStartDateUserEdited();
+      updateRecalcButtonLabel();
+    });
+    yearInput?.addEventListener?.('input', () => {
+      markStartDateUserEdited();
+      updateRecalcButtonLabel();
+    });
+
+    const expenseSelect = getSelect('expense-dropdown');
+    expenseSelect?.addEventListener?.('change', () => updateRecalcButtonLabel());
+
+    document.addEventListener('budgethelper:inputs-changed', () => updateRecalcButtonLabel());
+
     window.onload = async () => {
+        installConsoleTeeToTaskpane();
+        logToConsole('Verbose logging enabled (capturing console output).', 'info');
         logToConsole('Initializing...');
         await initializeSchema();
         await populateExpenseDropdown();
         await updateLastSyncInfo();
+        updateRecalcButtonLabel();
         logToConsole('Ready.');
     };
   }
@@ -94,7 +237,7 @@ export async function TriggerResetRollovers() {
     });
 
     logToConsole('Recalculation complete.', 'success');
-    await updateLastSyncInfo(); // Refresh UI
+    await updateLastSyncInfo(); // Refresh header (doesn't overwrite user-edited inputs)
 
   } catch (error) {
     handleError(error, 'TriggerResetRollovers');

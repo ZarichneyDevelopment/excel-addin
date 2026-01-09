@@ -1,4 +1,9 @@
 export function handleError(error: unknown, context: string) {
+    if (typeof document === 'undefined') {
+        console.error(`[${context}]`, error);
+        return;
+    }
+
     const errorContainer = document.getElementById('error-container');
     const errorContent = document.getElementById('error-content');
     const errorDetails = document.getElementById('error-details');

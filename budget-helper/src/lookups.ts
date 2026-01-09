@@ -23,24 +23,16 @@ export async function getLastUpdateDate(): Promise<Date | null> {
                     resolve(new Date(values[0]));
                 } else {
                     // Fallback to Document Settings
-                    const setting = Office.context.document.settings.get('LastRolloverUpdate');
-                    if (setting) {
-                        resolve(new Date(setting));
-                    } else {
-                        resolve(null);
-                    }
+                    const setting = (Office as any)?.context?.document?.settings?.get?.('LastRolloverUpdate');
+                    resolve(setting ? new Date(setting) : null);
                 }
             })
         ).subscribe({
             error(err) { 
                 console.warn('Could not fetch LastRolloverUpdate from Named Range, trying Settings:', err);
                 // Fallback to Document Settings on error
-                const setting = Office.context.document.settings.get('LastRolloverUpdate');
-                if (setting) {
-                    resolve(new Date(setting));
-                } else {
-                    resolve(null); 
-                }
+                const setting = (Office as any)?.context?.document?.settings?.get?.('LastRolloverUpdate');
+                resolve(setting ? new Date(setting) : null);
             },
         });
     });
@@ -60,12 +52,18 @@ export async function setLastUpdateDate(date: Date): Promise<void> {
 
     // ALWAYS set Document Settings as the reliable source of truth
     try {
+        const settings = (Office as any)?.context?.document?.settings;
+        if (!settings?.set || !settings?.saveAsync) {
+            console.warn("Office document settings are unavailable; skipping settings persistence for LastRolloverUpdate.");
+            return;
+        }
+
         console.log("Setting Document Settings 'LastRolloverUpdate'...");
-        Office.context.document.settings.set('LastRolloverUpdate', dateString);
+        settings.set('LastRolloverUpdate', dateString);
         
         console.log("Calling saveAsync on Document Settings...");
         await new Promise<void>((resolve) => {
-            Office.context.document.settings.saveAsync((result) => {
+            settings.saveAsync((result) => {
                 console.log("saveAsync callback received. Status:", result.status);
                 if (result.status === Office.AsyncResultStatus.Failed) {
                     console.error('Failed to save to Document Settings:', result.error);
@@ -116,12 +114,34 @@ export async function getMatchingRules(): Promise<MatchSet[]> {
 }
 
 export async function getExpenseList(): Promise<string[]> {
+    // Prefer the bounded `ExpenseData` table (more reliable than a whole-column named range).
+    // Fall back to `Expenses` named range for older/partial workbooks.
     return new Promise((resolve, reject) => {
-        NamedRangeValues$('Expenses').pipe(
+        TableRows$('ExpenseData').pipe(
+            map(row => row['Expense Type']),
             toArray(),
-            tap(values => resolve(values))
+            tap(values => {
+                const cleaned = values
+                    .map(v => (v ?? '').toString().trim())
+                    .filter(v => v.length > 0);
+                // Preserve order but de-dupe.
+                const unique = Array.from(new Set(cleaned));
+                resolve(unique);
+            })
         ).subscribe({
-            error(err) { reject(err); },
+            error() {
+                NamedRangeValues$('Expenses').pipe(
+                    toArray(),
+                    tap(values => {
+                        const cleaned = values
+                            .map(v => (v ?? '').toString().trim())
+                            .filter(v => v.length > 0 && v !== 'Named range is empty or does not exist');
+                        resolve(Array.from(new Set(cleaned)));
+                    })
+                ).subscribe({
+                    error(err) { reject(err); },
+                });
+            },
         });
     });
 }

@@ -1,4 +1,4 @@
-# GEMINI Maintenance Document
+# Maintenance Assistant
 
 This document provides a comprehensive overview of the "Budget Helper" Excel add-in for future maintenance and development.
 
@@ -24,10 +24,14 @@ The project is built using the following technologies:
 
 ## Project Structure
 
-The project is organized into two main directories:
+The repo is organized into a few key areas:
 
-*   **`/` (root):** Contains stale build artifacts. This directory can be ignored for development purposes.
-*   **`/budget-helper`:** The main directory containing the source code and configuration for the add-in.
+*   **`budget-helper/`:** The main directory containing the add-in source code and configuration.
+*   **`assets/`:** Source icons/branding used by the manifest and build.
+*   **`site/`:** Built bundle + manifest intended for static hosting (treat as generated output).
+*   **`docs/`:** Developer documentation.
+*   **`tools/`:** Workbook-related maintenance scripts (unpack/recalc/inspection).
+*   **`Budget.backup.xlsx`:** Offline workbook copy for development/inspection (not the live version).
 
 ### Key Files in `/budget-helper`
 
@@ -54,7 +58,10 @@ To set up the development environment, you will need to have Node.js and npm ins
 
 ### LibreOffice and `recalc.py`
 
-This project uses `recalc.py` to recalculate Excel formulas and check for errors, which is crucial for development and testing. `recalc.py` depends on LibreOffice, which is expected to be installed via Flatpak.
+This repo includes tooling under `tools/xlsx/`:
+
+*   **`tools/xlsx/recalc.py`:** Recalculates Excel formulas and checks for errors (useful for validating workbook changes outside of Excel). This depends on LibreOffice, expected to be installed via Flatpak.
+*   **`tools/xlsx/unpack_xlsx.py`:** Exports the workbook into an LLM-friendly text format (JSON + sparse TSV) including formulas, named ranges, and table definitions. This is the recommended way to “unpack” `Budget.backup.xlsx` for review and diffing.
 
 **Current Issue:** The `flatpak` command is not accessible in the current environment's PATH, which prevents the use of `recalc.py`. Before using `recalc.py`, please ensure that `flatpak` is correctly installed and accessible in the system's PATH. If `flatpak` is installed but not found, you may need to specify its absolute path or adjust the environment's PATH variable.
 
@@ -83,7 +90,7 @@ None of these steps have resolved the issue. Since this is a low-severity vulner
 
 ## Budget.xlsx Structure
 
-The `Budget.xlsx` file is the heart of the "Budget Helper" add-in. It is a comprehensive, zero-based budget spreadsheet for Steven and Mel's personal finance management.
+The workbook (tracked here as `Budget.backup.xlsx`) is the heart of the "Budget Helper" add-in. It is a comprehensive, zero-based budget spreadsheet for Steven and Mel's personal finance management.
 
 ### Overview
 
