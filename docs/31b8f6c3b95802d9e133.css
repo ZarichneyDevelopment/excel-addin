@@ -178,6 +178,12 @@ body {
     gap: 15px;
 }
 
+.budget-update-card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
 .control-group {
     display: flex;
     gap: 10px;
@@ -213,6 +219,8 @@ input[type="number"], select {
     padding: 8px;
     border-radius: 4px;
     font-family: var(--font-mono);
+    width: 100%;
+    box-sizing: border-box;
 }
 
 input:focus, select:focus {
@@ -282,6 +290,7 @@ input:focus, select:focus {
     display: flex;
     gap: 10px;
     align-items: center;
+    flex-wrap: wrap;
 }
 
 .transfer-row + .transfer-row {
@@ -296,6 +305,11 @@ input:focus, select:focus {
     color: var(--primary-orange);
     font-size: 1.2rem;
     line-height: 1;
+}
+
+.transfer-row .select-wrapper {
+    flex: 1 1 160px;
+    min-width: 160px;
 }
 
 /* Console */

@@ -28,6 +28,7 @@
             <button class="feature-tab is-active" data-feature="ingestion" type="button">Import</button>
             <button class="feature-tab" data-feature="recalc" type="button">Recalc</button>
             <button class="feature-tab" data-feature="transfer" type="button">Transfer</button>
+            <button class="feature-tab" data-feature="budget-update" type="button">Budget</button>
         </nav>
         <!-- Section 1: Ingestion -->
         <section class="card ingestion-card feature-panel" data-feature="ingestion">
@@ -99,7 +100,35 @@
             </div>
         </section>
 
-        <!-- Section 4: Console -->
+        <!-- Section 4: Budget Update -->
+        <section class="card budget-update-card feature-panel" data-feature="budget-update">
+            <div class="transfer-header">
+                <span>Budget Update</span>
+                <span class="transfer-hint">Applies next month + logs history</span>
+            </div>
+            <div class="control-group">
+                <div class="input-wrapper">
+                    <label for="budget-update-expense">Expense</label>
+                    <div class="select-wrapper">
+                        <select id="budget-update-expense">
+                            <option value="">Select</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="input-wrapper">
+                    <label for="budget-update-amount">New Amount</label>
+                    <input type="number" id="budget-update-amount" min="0" step="0.01" placeholder="0.00">
+                </div>
+            </div>
+            <div class="hint">
+                The previous amount is logged in ChangeHistory through the current month. The new amount starts next month.
+            </div>
+            <button id="budget-update-btn" class="btn-secondary" title="Updates the ExpenseData value and logs the previous amount in ChangeHistory.">
+                Apply Budget Update
+            </button>
+        </section>
+
+        <!-- Section 5: Console -->
         <section class="card console-card">
             <div class="console-header">
                 <span>Activity Log</span>

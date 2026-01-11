@@ -1,4 +1,4 @@
-import { getExpenseList, getLastUpdateDate, initializeSchema } from '../lookups';
+import { getAllBudgetHistory, getExpenseList, getLastUpdateDate, initializeSchema } from '../lookups';
 import { preventDefaults, handleFileDrop } from '../file-drop';
 import { resetRollover } from '../rollover';
 import { closeErrorConsole, copyErrorToClipboard, handleError } from '../error-handler';
@@ -11,6 +11,7 @@ const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep
 
 let consoleTeeInstalled = false;
 const defaultFeature = 'ingestion';
+const budgetUpdateFallback = { month: 2, year: 2024 };
 
 function safeFormatConsoleArgs(args: unknown[]): string {
   const formatted = args.map(arg => {
@@ -134,6 +135,7 @@ function initializeFeatureSwitcher() {
   setActiveFeature(defaultFeature);
 }
 
+
 function setSelectOptions(select: HTMLSelectElement, options: string[], defaultLabel: string) {
   select.replaceChildren();
   const defaultOption = document.createElement('option');
@@ -156,6 +158,14 @@ function parseAmountInput(value: string): number | null {
   return parsed;
 }
 
+function parseNonNegativeAmountInput(value: string): number | null {
+  const cleaned = value.replace(/,/g, '').trim();
+  if (!cleaned) return null;
+  const parsed = Number(cleaned);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return parsed;
+}
+
 function formatAmount(amount: number): string {
   return amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -169,6 +179,55 @@ function createTransferRef(): string {
     // Fall through to deterministic fallback.
   }
   return `xfer-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function parseHistoryNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const parsed = parseFloat(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getLatestHistoryEndIndex(historyRows: any[], expense: string): number | null {
+  let latest: number | null = null;
+  for (const row of historyRows) {
+    if (row['Expense'] !== expense) continue;
+    const monthEnd = parseHistoryNumber(row['Month End']);
+    const yearEnd = parseHistoryNumber(row['Year End']);
+    if (monthEnd === null || yearEnd === null) continue;
+    const endIndex = monthYearToIndex(monthEnd, yearEnd);
+    if (latest === null || endIndex > latest) {
+      latest = endIndex;
+    }
+  }
+  return latest;
+}
+
+async function updateExpenseBudgetValue(expense: string, newAmount: number): Promise<number> {
+  return Excel.run(async (context) => {
+    const table = context.workbook.tables.getItem('ExpenseData');
+    const headerRange = table.getHeaderRowRange().load('values');
+    const dataRange = table.getDataBodyRange().load('values');
+    await context.sync();
+
+    const headers = headerRange.values[0] as string[];
+    const expenseIndex = headers.indexOf('Expense Type');
+    const budgetIndex = headers.indexOf('Budget');
+    if (expenseIndex === -1 || budgetIndex === -1) {
+      throw new Error('ExpenseData table is missing expected columns.');
+    }
+
+    const rows = dataRange.values;
+    const rowIndex = rows.findIndex(row => String(row[expenseIndex]).trim() === expense);
+    if (rowIndex === -1) {
+      throw new Error(`Expense "${expense}" was not found in ExpenseData.`);
+    }
+
+    const oldRaw = rows[rowIndex][budgetIndex];
+    const oldBudget = parseHistoryNumber(oldRaw) ?? 0;
+    dataRange.getCell(rowIndex, budgetIndex).values = [[newAmount]];
+    await context.sync();
+    return oldBudget;
+  });
 }
 
 function getStartMonthYearFromInputs(): { month: number | null, year: number | null } {
@@ -185,6 +244,12 @@ function getStartMonthYearFromInputs(): { month: number | null, year: number | n
 function monthYearToIndex(month: number, year: number): number {
   // 0-based month index
   return year * 12 + (month - 1);
+}
+
+function monthYearFromIndex(index: number): { month: number; year: number } {
+  const year = Math.floor(index / 12);
+  const month = (index % 12) + 1;
+  return { month, year };
 }
 
 function formatMonthYear(month: number, year: number): string {
@@ -319,6 +384,8 @@ Office.onReady((info) => {
 
     const transferButton = document.getElementById('transfer-btn');
     transferButton?.addEventListener?.('click', TriggerBudgetTransfer);
+    const budgetUpdateButton = document.getElementById('budget-update-btn');
+    budgetUpdateButton?.addEventListener?.('click', TriggerBudgetUpdate);
 
     // `window.onload` can fire before this handler is assigned in Office taskpanes.
     // Initialize immediately once Office is ready and the DOM is present.
@@ -393,14 +460,13 @@ export async function TriggerBudgetTransfer() {
     const now = new Date();
     const month = now.getMonth() + 1;
     const year = now.getFullYear();
-    const date = now.toLocaleDateString();
-    const timestamp = now.toLocaleString();
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const account = 'Budget Transfer';
     const description = 'Bucket Transfer';
 
     const transferRef = createTransferRef();
-    const memoOut = `Transfer to ${to} (${transferRef}) @ ${timestamp}`;
-    const memoIn = `Transfer from ${from} (${transferRef}) @ ${timestamp}`;
+    const memoOut = `Transfer to ${to}`;
+    const memoIn = `Transfer from ${from}`;
 
     const rows = [
       [`${transferRef}-out`, month, year, date, account, from, -amount, description, memoOut],
@@ -414,6 +480,100 @@ export async function TriggerBudgetTransfer() {
   } catch (error) {
     handleError(error, 'TriggerBudgetTransfer');
     logToConsole('Error adding transfer.', 'error');
+  }
+}
+
+export async function TriggerBudgetUpdate() {
+  try {
+    const expenseSelect = getSelect('budget-update-expense');
+    const amountInput = getNumberInput('budget-update-amount');
+
+    if (!expenseSelect || !amountInput) {
+      logToConsole('Budget update controls are missing.', 'error');
+      return;
+    }
+
+    const expense = expenseSelect.value.trim();
+    const newAmount = parseNonNegativeAmountInput(amountInput.value);
+
+    if (!expense) {
+      logToConsole('Select an expense to update.', 'warn');
+      return;
+    }
+
+    if (newAmount === null) {
+      logToConsole('Enter a new budget amount (zero or greater).', 'warn');
+      return;
+    }
+
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+    const currentIndex = monthYearToIndex(currentMonth, currentYear);
+
+    const historyRows = await getAllBudgetHistory();
+    const lastEndIndex = getLatestHistoryEndIndex(historyRows, expense);
+
+    let startIndex: number;
+    let shouldWriteHistory = true;
+
+    if (lastEndIndex !== null) {
+      const lastEnd = monthYearFromIndex(lastEndIndex);
+      logToConsole(`Latest history for ${expense} ends ${formatMonthYear(lastEnd.month, lastEnd.year)}.`, 'info');
+      if (lastEndIndex >= currentIndex) {
+        logToConsole('Existing history already covers the current month; skipping history insert.', 'warn');
+        shouldWriteHistory = false;
+        startIndex = currentIndex;
+      } else {
+        startIndex = lastEndIndex + 1;
+      }
+    } else {
+      const fallbackIndex = monthYearToIndex(budgetUpdateFallback.month, budgetUpdateFallback.year);
+      logToConsole(
+        `No history for ${expense}; using fallback start (${formatMonthYear(budgetUpdateFallback.month, budgetUpdateFallback.year)}).`,
+        'info'
+      );
+      startIndex = fallbackIndex;
+    }
+
+    if (startIndex > currentIndex) {
+      logToConsole('History range start is after the current month; using current month instead.', 'warn');
+      startIndex = currentIndex;
+    }
+
+    const start = monthYearFromIndex(startIndex);
+
+    logToConsole(`Updating ${expense} budget to ${formatAmount(newAmount)} (effective next month).`, 'info');
+
+    const oldAmount = await updateExpenseBudgetValue(expense, newAmount);
+    const oldAmountLabel = formatAmount(oldAmount);
+
+    if (shouldWriteHistory) {
+      const historyRow = [
+        expense,
+        start.month,
+        start.year,
+        null,
+        currentMonth,
+        currentYear,
+        null,
+        oldAmount,
+      ];
+
+      await WriteToTable('BudgetHistory', [historyRow]);
+
+      logToConsole(
+        `Logged ${expense} history: ${oldAmountLabel} from ${formatMonthYear(start.month, start.year)} → ${formatMonthYear(currentMonth, currentYear)}.`,
+        'success'
+      );
+    }
+
+    logToConsole(`Updated ${expense} budget to ${formatAmount(newAmount)}.`, 'success');
+
+    amountInput.value = '';
+  } catch (error) {
+    handleError(error, 'TriggerBudgetUpdate');
+    logToConsole('Error applying budget update.', 'error');
   }
 }
 
@@ -435,6 +595,10 @@ async function populateExpenseDropdown() {
     const transferTo = getSelect('transfer-to');
     if (transferTo) {
       setSelectOptions(transferTo, expenseList, 'To');
+    }
+    const budgetUpdateSelect = getSelect('budget-update-expense');
+    if (budgetUpdateSelect) {
+      setSelectOptions(budgetUpdateSelect, expenseList, 'Select');
     }
 
     const sample = expenseList.slice(0, 3).join(', ');
